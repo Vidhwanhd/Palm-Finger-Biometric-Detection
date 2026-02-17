@@ -176,43 +176,6 @@ fun FingerScreen(
 
                             val result = withContext(Dispatchers.Default) {
 
-                                if (BlurDetector.isBlurred(bitmap))
-                                    return@withContext "BLUR"
-
-                                val detection =
-                                    detector.detect(bitmap)
-                                        ?: return@withContext "NO_FINGER"
-
-                                if (detection.landmarks().size > 1)
-                                    return@withContext "MULTIPLE"
-
-                                if (detector.isFingerDorsal(detection))
-                                    return@withContext "DORSAL"
-
-                                val detectedHand =
-                                    detector.getHandSide(detection)
-
-                                if (detectedHand != storedHand)
-                                    return@withContext "WRONG_HAND"
-
-                                val detectedFinger =
-                                    detector.detectExtendedFinger(detection)
-                                        ?: return@withContext "NO_FINGER"
-
-                                if (detectedFinger != fingerNames[fingerIndex])
-                                    return@withContext "WRONG_FINGER"
-
-                                val isValid =
-                                    detector.validateFinger(
-                                        detection,
-                                        detectedFinger
-                                    )
-
-                                if (!isValid)
-                                    return@withContext "NO_MATCH"
-
-
-
                                 val timeStamp = SimpleDateFormat(
                                     "yyyyMMdd_HHmmss",
                                     Locale.getDefault()
@@ -232,36 +195,24 @@ fun FingerScreen(
 
                             isProcessing = false
 
-                            when (result) {
+                            if (result == "SUCCESS") {
+                                fingerIndex++
 
-                                "BLUR" ->
-                                    snackbarHostState.showSnackbar("Image blurred. Recapture.")
+                                if (result == "SUCCESS") {
 
-                                "NO_FINGER" ->
-                                    snackbarHostState.showSnackbar("Finger not detected.")
-
-                                "DORSAL" ->
-                                    snackbarHostState.showSnackbar("Show palm side of finger.")
-
-                                "WRONG_HAND" ->
-                                    snackbarHostState.showSnackbar("Incorrect hand used.")
-
-                                "MULTIPLE" ->
-                                    snackbarHostState.showSnackbar("Place only ONE finger.")
-
-                                "NO_MATCH" ->
-                                    snackbarHostState.showSnackbar("Finger does not match palm.")
-
-                                "SUCCESS" -> {
                                     fingerIndex++
 
                                     if (fingerIndex >= totalFingers) {
                                         showSuccessDialog = true
+                                        fingerIndex = totalFingers - 1 // prevent crash
+
                                     }
-                                }
+
+                            }
                             }
                         }
                     }
+
                 },
                 enabled = !isProcessing,
                 modifier = Modifier
