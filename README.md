@@ -72,8 +72,7 @@ Device with camera
 Steps
 
 Clone repository:
-
-git clone https://github.com/YOUR_USERNAME/Palm-Finger-Biometric-Detection.git
+(https://github.com/Vidhwanhd/Palm-Finger-Biometric-Detection.git)
 
 
 Open project in Android Studio.
