@@ -69,7 +69,10 @@ fun FingerScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { detector.close() }
+        onDispose {
+            detector.close()
+            cameraManager.shutdown()
+        }
     }
 
     Scaffold(
@@ -127,8 +130,7 @@ fun FingerScreen(
 
                     Text(
                         text = "Scanning: ${fingerNames[fingerIndex]}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium
+                        color = Color.White
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -181,6 +183,9 @@ fun FingerScreen(
                                     detector.detect(bitmap)
                                         ?: return@withContext "NO_FINGER"
 
+                                if (detection.landmarks().size > 1)
+                                    return@withContext "MULTIPLE"
+
                                 if (detector.isFingerDorsal(detection))
                                     return@withContext "DORSAL"
 
@@ -190,14 +195,23 @@ fun FingerScreen(
                                 if (detectedHand != storedHand)
                                     return@withContext "WRONG_HAND"
 
-                                val count =
-                                    detector.countFingers(detection)
+                                val detectedFinger =
+                                    detector.detectExtendedFinger(detection)
+                                        ?: return@withContext "NO_FINGER"
 
-                                if (count != 1)
-                                    return@withContext "MULTIPLE"
+                                if (detectedFinger != fingerNames[fingerIndex])
+                                    return@withContext "WRONG_FINGER"
 
-                                if (!detector.validateWithPalmRecord(detection))
+                                val isValid =
+                                    detector.validateFinger(
+                                        detection,
+                                        detectedFinger
+                                    )
+
+                                if (!isValid)
                                     return@withContext "NO_MATCH"
+
+
 
                                 val timeStamp = SimpleDateFormat(
                                     "yyyyMMdd_HHmmss",
@@ -205,7 +219,7 @@ fun FingerScreen(
                                 ).format(Date())
 
                                 val fileName =
-                                    "${storedHand}_${fingerNames[fingerIndex]}_$timeStamp.jpg"
+                                    "${storedHand}_${fingerNames[fingerIndex]}_Finger_$timeStamp.jpg"
 
                                 StorageUtil.saveImageToPublicFolder(
                                     context,
@@ -241,7 +255,7 @@ fun FingerScreen(
                                 "SUCCESS" -> {
                                     fingerIndex++
 
-                                    if (fingerIndex == totalFingers) {
+                                    if (fingerIndex >= totalFingers) {
                                         showSuccessDialog = true
                                     }
                                 }
@@ -255,6 +269,7 @@ fun FingerScreen(
                     .padding(bottom = 40.dp)
                     .fillMaxWidth(0.8f)
             ) {
+
                 if (isProcessing) {
                     CircularProgressIndicator(
                         color = Color.White,
@@ -279,9 +294,7 @@ fun FingerScreen(
                             Text("View Report")
                         }
                     },
-                    title = {
-                        Text("All Fingers Captured")
-                    },
+                    title = { Text("All Fingers Captured") },
                     text = {
                         Text("All five fingers scanned successfully.")
                     }

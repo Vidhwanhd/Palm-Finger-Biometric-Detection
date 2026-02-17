@@ -18,12 +18,13 @@ import com.example.palmfinger.camera.BlurDetector
 import com.example.palmfinger.camera.CameraManager
 import com.example.palmfinger.camera.LuminosityAnalyzer
 import com.example.palmfinger.detection.HandDetector
-import com.example.palmfinger.utils.StorageUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.palmfinger.utils.StorageUtil
 import java.text.SimpleDateFormat
 import java.util.*
+
 
 @Composable
 fun PalmScreen(navController: NavController) {
@@ -33,7 +34,6 @@ fun PalmScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var brightnessScore by remember { mutableStateOf(0.0) }
     var lightType by remember { mutableStateOf("Normal") }
     var detectedHandSide by remember { mutableStateOf("Unknown") }
 
@@ -42,10 +42,10 @@ fun PalmScreen(navController: NavController) {
 
     var isProcessing by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
+    var palmStored by remember { mutableStateOf(false) }
 
     val analyzer = remember {
         LuminosityAnalyzer(context) { result ->
-            brightnessScore = result.brightnessScore
             lightType = result.lightType
         }
     }
@@ -142,7 +142,7 @@ fun PalmScreen(navController: NavController) {
             Button(
                 onClick = {
 
-                    if (isProcessing) return@Button
+                    if (isProcessing || palmStored) return@Button
 
                     if (lightType != "Normal") {
                         scope.launch {
@@ -173,25 +173,37 @@ fun PalmScreen(navController: NavController) {
                                     detector.detect(bitmap)
                                         ?: return@withContext "NO_PALM"
 
+                                if (detection.landmarks().isEmpty())
+                                    return@withContext "NO_PALM"
+
+
                                 if (detector.isPalmDorsal(detection))
                                     return@withContext "DORSAL"
 
                                 val handSide =
                                     detector.getHandSide(detection)
 
-                                detectedHandSide = handSide
+                                if (!palmStored) {
 
-                                if (handSide == lastHand) {
-                                    stableFrames++
-                                } else {
-                                    stableFrames = 1
-                                    lastHand = handSide
+                                    detector.storePalmTemplate(detection)
+
+                                    val timeStamp = SimpleDateFormat(
+                                        "yyyyMMdd_HHmmss",
+                                        Locale.getDefault()
+                                    ).format(Date())
+
+                                    val fileName =
+                                        "${handSide}_Hand_$timeStamp.jpg"
+
+                                    StorageUtil.saveImageToPublicFolder(
+                                        context,
+                                        bitmap,
+                                        fileName
+                                    )
+
+                                    palmStored = true
                                 }
 
-                                if (stableFrames < 3)
-                                    return@withContext "UNSTABLE"
-
-                                detector.storePalmTemplate(detection)
 
                                 handSide
                             }
@@ -200,16 +212,28 @@ fun PalmScreen(navController: NavController) {
 
                             when (result) {
 
-                                "BLUR" -> snackbarHostState.showSnackbar("Palm image blurred.")
-                                "NO_PALM" -> snackbarHostState.showSnackbar("No palm detected.")
-                                "DORSAL" -> snackbarHostState.showSnackbar("Show palm side, not dorsal.")
-                                "UNSTABLE" -> snackbarHostState.showSnackbar("Hold steady...")
-                                else -> showSuccessDialog = true
+                                "BLUR" ->
+                                    snackbarHostState.showSnackbar("Palm image blurred.")
+
+                                "NO_PALM" ->
+                                    snackbarHostState.showSnackbar("No palm detected.")
+
+                                "DORSAL" ->
+                                    snackbarHostState.showSnackbar(
+                                        "Palm dorsal side detected, minutiae points won’t be extracted."
+                                    )
+
+                                else -> {
+                                    detectedHandSide = result
+                                    showSuccessDialog = true
+                                }
                             }
-                        }
+
+
+                }
                     }
                 },
-                enabled = !isProcessing,
+                enabled = !isProcessing && !palmStored,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 40.dp)
@@ -241,7 +265,7 @@ fun PalmScreen(navController: NavController) {
                         Text("Palm Captured Successfully")
                     },
                     text = {
-                        Text("Your $detectedHandSide hand has been recorded successfully.")
+                        Text("Your $detectedHandSide hand has been recorded successfully. Now capture your $detectedHandSide hand fingers ")
                     }
                 )
             }

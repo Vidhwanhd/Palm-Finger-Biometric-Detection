@@ -166,6 +166,19 @@ class CameraManager(
         )
     }
 
+    private var cameraProvider: ProcessCameraProvider? = null
+    private val executor = Executors.newSingleThreadExecutor()
+
+
+    fun shutdown() {
+        try {
+            cameraProvider?.unbindAll()
+            executor.shutdown()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     // ================= CAMERA DETAILS =================
 
     fun getCameraDetails(): CameraDetails {

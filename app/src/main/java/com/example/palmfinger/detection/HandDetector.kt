@@ -7,7 +7,6 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
-import kotlin.math.abs
 import kotlin.math.sqrt
 
 class HandDetector(
@@ -16,9 +15,15 @@ class HandDetector(
 
     private val detector: HandLandmarker
 
-    // Palm feature template storage
-    private var storedPalmFeature: DoubleArray? = null
+    // ================= STORED PALM TEMPLATE =================
+
     private var storedHandSide: String? = null
+
+    private var storedThumb: DoubleArray? = null
+    private var storedIndex: DoubleArray? = null
+    private var storedMiddle: DoubleArray? = null
+    private var storedRing: DoubleArray? = null
+    private var storedLittle: DoubleArray? = null
 
     init {
 
@@ -37,6 +42,8 @@ class HandDetector(
             HandLandmarker.createFromOptions(context, options)
     }
 
+    // ================= DETECT =================
+
     fun detect(bitmap: Bitmap): HandLandmarkerResult? {
         return try {
             val mpImage = BitmapImageBuilder(bitmap).build()
@@ -46,7 +53,7 @@ class HandDetector(
         }
     }
 
-    // ================= HAND SIDE USING MEDIAPIPE =================
+    // ================= HAND SIDE =================
 
     fun getHandSide(result: HandLandmarkerResult): String {
 
@@ -56,41 +63,12 @@ class HandDetector(
             ?.categoryName()
             ?: return "Unknown"
 
-        // 🔥 FIX: Reverse because using BACK camera
+        // Reverse because using back camera
         return if (rawSide == "Left") "Right" else "Left"
     }
 
-
-    // ================= FINGER COUNT =================
-
-    fun countFingers(result: HandLandmarkerResult): Int {
-
-        val lm = result.landmarks().firstOrNull() ?: return 0
-        var count = 0
-
-        if (lm[4].x() < lm[3].x()) count++        // Thumb
-        if (lm[8].y() < lm[6].y()) count++        // Index
-        if (lm[12].y() < lm[10].y()) count++      // Middle
-        if (lm[16].y() < lm[14].y()) count++      // Ring
-        if (lm[20].y() < lm[18].y()) count++      // Little
-
-        return count
-    }
-
-    // ================= FINGER IDENTIFICATION =================
-
-    fun identifyFinger(result: HandLandmarkerResult): String {
-
-        val lm = result.landmarks().firstOrNull() ?: return "Unknown"
-
-        return when {
-            lm[4].y() < lm[3].y() -> "Thumb"
-            lm[8].y() < lm[6].y() -> "Index"
-            lm[12].y() < lm[10].y() -> "Middle"
-            lm[16].y() < lm[14].y() -> "Ring"
-            lm[20].y() < lm[18].y() -> "Little"
-            else -> "Unknown"
-        }
+    fun getStoredHandSide(): String? {
+        return storedHandSide
     }
 
     // ================= PALM DORSAL CHECK =================
@@ -99,16 +77,22 @@ class HandDetector(
 
         val lm = result.landmarks().firstOrNull() ?: return false
 
-        // Compare finger base vs wrist depth
-        val wristZ = lm[0].z()
-        val indexBaseZ = lm[5].z()
-        val pinkyBaseZ = lm[17].z()
+        val wrist = lm[0]
+        val indexBase = lm[5]
+        val pinkyBase = lm[17]
 
-        val avgBaseZ = (indexBaseZ + pinkyBaseZ) / 2f
+        val v1x = indexBase.x() - wrist.x()
+        val v1y = indexBase.y() - wrist.y()
 
-        // If base is farther than wrist → dorsal likely shown
-        return avgBaseZ > wristZ
+        val v2x = pinkyBase.x() - wrist.x()
+        val v2y = pinkyBase.y() - wrist.y()
+
+        val normalZ = (v1x * v2y) - (v1y * v2x)
+
+        // Adjust sign if needed depending on camera
+        return normalZ < 0
     }
+
 
 
     // ================= FINGER DORSAL CHECK =================
@@ -117,63 +101,132 @@ class HandDetector(
 
         val lm = result.landmarks().firstOrNull() ?: return false
 
-        val tipZ = lm[8].z()
-        val pipZ = lm[6].z()
+        val tipZ = lm[8].z()      // Index tip
+        val mcpZ = lm[5].z()      // Index base
 
-        return tipZ > pipZ
+        val tipY = lm[8].y()
+        val mcpY = lm[5].y()
+
+        val depthCheck = tipZ > mcpZ + 0.01f
+        val directionCheck = tipY > mcpY   // finger pointing down
+
+        return depthCheck && directionCheck
     }
 
-    // ================= PALM FEATURE EXTRACTION =================
 
-    fun extractPalmFeature(result: HandLandmarkerResult): DoubleArray {
+    // ================= STORE PALM TEMPLATE =================
 
-        val lm = result.landmarks().first()
+    fun storePalmTemplate(result: HandLandmarkerResult) {
 
-        val feature = DoubleArray(lm.size * 3)
+        storedHandSide = getHandSide(result)
+
+        storedThumb = extractFingerFeature(result, 1, 4)
+        storedIndex = extractFingerFeature(result, 5, 8)
+        storedMiddle = extractFingerFeature(result, 9, 12)
+        storedRing = extractFingerFeature(result, 13, 16)
+        storedLittle = extractFingerFeature(result, 17, 20)
+    }
+
+    // ================= VALIDATE FINGER =================
+
+    fun validateFinger(
+        result: HandLandmarkerResult,
+        fingerName: String
+    ): Boolean {
+
+        if (result.landmarks().isEmpty())
+            return false
+
+        val currentFeature = when (fingerName) {
+            "Thumb" -> extractFingerFeature(result, 1, 4)
+            "Index" -> extractFingerFeature(result, 5, 8)
+            "Middle" -> extractFingerFeature(result, 9, 12)
+            "Ring" -> extractFingerFeature(result, 13, 16)
+            "Little" -> extractFingerFeature(result, 17, 20)
+            else -> return false
+        }
+
+        if (currentFeature.isEmpty())
+            return false
+
+        val storedFeature = when (fingerName) {
+            "Thumb" -> storedThumb
+            "Index" -> storedIndex
+            "Middle" -> storedMiddle
+            "Ring" -> storedRing
+            "Little" -> storedLittle
+            else -> null
+        } ?: return false
+
+        val similarity =
+            calculateSimilarity(storedFeature, currentFeature)
+
+        return similarity > 0.85
+    }
+
+
+    // ================= EXTRACT NORMALIZED FINGER FEATURE =================
+
+    private fun extractFingerFeature(
+        result: HandLandmarkerResult,
+        start: Int,
+        end: Int
+    ): DoubleArray {
+
+        val landmarksList = result.landmarks()
+
+        if (landmarksList.isEmpty())
+            return DoubleArray(0)
+
+        val lm = landmarksList.first()
+
+        if (lm.size < 21)
+            return DoubleArray(0)
+
+        val wrist = lm[0]
+
+        val feature = DoubleArray((end - start + 1) * 3)
         var index = 0
 
-        for (point in lm) {
-            feature[index++] = point.x().toDouble()
-            feature[index++] = point.y().toDouble()
-            feature[index++] = point.z().toDouble()
+        for (i in start..end) {
+
+            val x = lm[i].x() - wrist.x()
+            val y = lm[i].y() - wrist.y()
+            val z = lm[i].z()
+
+            feature[index++] = x.toDouble()
+            feature[index++] = y.toDouble()
+            feature[index++] = z.toDouble()
         }
 
         return feature
     }
 
-    // ================= STORE PALM TEMPLATE =================
+    fun detectExtendedFinger(result: HandLandmarkerResult): String? {
 
-    fun storePalmTemplate(
-        result: HandLandmarkerResult
-    ) {
+        val lm = result.landmarks().firstOrNull() ?: return null
 
-        storedPalmFeature =
-            extractPalmFeature(result)
+        val fingers = mapOf(
+            "Thumb" to Pair(4, 2),
+            "Index" to Pair(8, 6),
+            "Middle" to Pair(12, 10),
+            "Ring" to Pair(16, 14),
+            "Little" to Pair(20, 18)
+        )
 
-        storedHandSide =
-            getHandSide(result)
+        for ((name, pair) in fingers) {
+
+            val tip = lm[pair.first]
+            val pip = lm[pair.second]
+
+            if (tip.y() < pip.y()) {
+                return name
+            }
+        }
+
+        return null
     }
 
-    // ================= VALIDATE FINGER AGAINST PALM =================
-
-    fun validateWithPalmRecord(
-        result: HandLandmarkerResult
-    ): Boolean {
-
-        val currentFeature =
-            extractPalmFeature(result)
-
-        val storedFeature =
-            storedPalmFeature ?: return false
-
-        val similarity =
-            calculateSimilarity(
-                storedFeature,
-                currentFeature
-            )
-
-        return similarity > 0.90
-    }
 
     // ================= COSINE SIMILARITY =================
 
