@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
+
 @Composable
 fun FingerScreen(
     navController: NavController,
