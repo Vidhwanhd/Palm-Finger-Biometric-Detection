@@ -17,7 +17,7 @@ import androidx.navigation.NavController
 import com.example.palmfinger.camera.BlurDetector
 import com.example.palmfinger.camera.CameraManager
 import com.example.palmfinger.camera.LuminosityAnalyzer
-import com.example.palmfinger.detection.HandDetector
+import com.example.palmfinger.detection.*
 import com.example.palmfinger.utils.StorageUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,9 +39,7 @@ fun FingerScreen(
     var fingerIndex by remember { mutableStateOf(0) }
     val totalFingers = 5
 
-    var brightnessScore by remember { mutableStateOf(0.0) }
     var lightType by remember { mutableStateOf("Normal") }
-
     var isProcessing by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
 
@@ -51,7 +49,6 @@ fun FingerScreen(
 
     val analyzer = remember {
         LuminosityAnalyzer(context) { result ->
-            brightnessScore = result.brightnessScore
             lightType = result.lightType
         }
     }
@@ -63,6 +60,7 @@ fun FingerScreen(
     }
 
     val detector = remember { HandDetector(context) }
+    val extractor = remember { MinutiaeExtractor() }
 
     LaunchedEffect(Unit) {
         cameraManager.startCamera()
@@ -114,7 +112,7 @@ fun FingerScreen(
                 ) {}
             }
 
-            // Top Status Card
+            // Status Card
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -129,19 +127,19 @@ fun FingerScreen(
                 ) {
 
                     Text(
-                        text = "Scanning: ${fingerNames[fingerIndex]}",
+                        text = "Scanning: ${fingerNames.getOrElse(fingerIndex) { "Completed" }}",
                         color = Color.White
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Progress: ${fingerIndex + 1} / $totalFingers",
+                        text = "Progress: ${minOf(fingerIndex + 1, totalFingers)} / $totalFingers",
                         color = Color.Gray
                     )
 
                     LinearProgressIndicator(
-                        progress = (fingerIndex + 1) / totalFingers.toFloat(),
+                        progress = (minOf(fingerIndex + 1, totalFingers)) / totalFingers.toFloat(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp)
@@ -153,7 +151,8 @@ fun FingerScreen(
             Button(
                 onClick = {
 
-                    if (isProcessing) return@Button
+                    if (isProcessing || showSuccessDialog || fingerIndex >= totalFingers)
+                        return@Button
 
                     if (lightType != "Normal") {
                         scope.launch {
@@ -176,6 +175,36 @@ fun FingerScreen(
 
                             val result = withContext(Dispatchers.Default) {
 
+                                if (fingerIndex >= totalFingers)
+                                    return@withContext "STOP"
+
+                                if (BlurDetector.isBlurred(bitmap))
+                                    return@withContext "BLUR"
+
+                                val detection =
+                                    detector.detect(bitmap)
+                                        ?: return@withContext "NO_FINGER"
+
+                                if (detection.landmarks().isEmpty())
+                                    return@withContext "NO_FINGER"
+
+                                val detectedHand =
+                                    detector.getHandSide(detection)
+
+                                val newEmbedding =
+                                    extractor.extractEmbedding(detection)
+
+                                val validation =
+                                    FingerValidator.validateHand(
+                                        storedHand = PalmStorage.storedHandSide,
+                                        detectedHand = detectedHand,
+                                        storedEmbedding = PalmStorage.storedEmbedding,
+                                        newEmbedding = newEmbedding
+                                    )
+
+                                if (!validation.isValid)
+                                    return@withContext validation.message
+
                                 val timeStamp = SimpleDateFormat(
                                     "yyyyMMdd_HHmmss",
                                     Locale.getDefault()
@@ -195,26 +224,38 @@ fun FingerScreen(
 
                             isProcessing = false
 
-                            if (result == "SUCCESS") {
-                                fingerIndex++
+                            when (result) {
 
-                                if (result == "SUCCESS") {
+                                "BLUR" ->
+                                    snackbarHostState.showSnackbar("Image blurred. Recapture.")
 
-                                    fingerIndex++
+                                "NO_FINGER" ->
+                                    snackbarHostState.showSnackbar("Finger not detected.")
 
-                                    if (fingerIndex >= totalFingers) {
+                                "Incorrect Hand" ->
+                                    snackbarHostState.showSnackbar("Incorrect Hand Used.")
+
+                                "Finger does not match" ->
+                                    snackbarHostState.showSnackbar("Finger does not match Palm.")
+
+                                "Palm data missing" ->
+                                    snackbarHostState.showSnackbar("Palm not captured.")
+
+                                "SUCCESS" -> {
+
+                                    if (fingerIndex < totalFingers - 1) {
+                                        fingerIndex++
+                                    } else {
+                                        fingerIndex = totalFingers - 1
                                         showSuccessDialog = true
-                                        fingerIndex = totalFingers - 1 // prevent crash
-
+                                        cameraManager.shutdown()
                                     }
-
-                            }
+                                }
                             }
                         }
                     }
-
                 },
-                enabled = !isProcessing,
+                enabled = !isProcessing && fingerIndex < totalFingers,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 40.dp)
@@ -227,11 +268,11 @@ fun FingerScreen(
                         modifier = Modifier.size(20.dp)
                     )
                 } else {
-                    Text("Scan ${fingerNames[fingerIndex]}")
+                    Text("Scan ${fingerNames.getOrElse(fingerIndex) { "" }}")
                 }
             }
 
-            // Final Success Dialog
+            // Success Dialog
             if (showSuccessDialog) {
                 AlertDialog(
                     onDismissRequest = {},

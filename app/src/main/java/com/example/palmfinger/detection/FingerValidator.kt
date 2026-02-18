@@ -4,7 +4,7 @@ import kotlin.math.sqrt
 
 object FingerValidator {
 
-    private const val MATCH_THRESHOLD = 0.90f
+    private const val MATCH_THRESHOLD = 0.85f
 
     private fun normalize(vector: FloatArray): FloatArray {
 
@@ -36,55 +36,28 @@ object FingerValidator {
         return dot
     }
 
-    fun validateFinger(
-        storedHand: String,
+    fun validateHand(
+        storedHand: String?,
         detectedHand: String,
-        storedFingerName: String,
-        detectedFingerName: String,
         storedEmbedding: FloatArray?,
         newEmbedding: FloatArray?
     ): ValidationResult {
 
-        if (storedEmbedding == null || newEmbedding == null) {
-            return ValidationResult(
-                false,
-                "Embedding data missing",
-                0f
-            )
+        if (storedHand == null || storedEmbedding == null || newEmbedding == null) {
+            return ValidationResult(false, "Palm data missing", 0f)
         }
 
         if (!storedHand.equals(detectedHand, true)) {
-            return ValidationResult(
-                false,
-                "Incorrect Finger",
-                0f
-            )
+            return ValidationResult(false, "Incorrect Hand", 0f)
         }
 
-        if (!storedFingerName.equals(detectedFingerName, true)) {
-            return ValidationResult(
-                false,
-                "Finger does not match",
-                0f
-            )
-        }
-
-        val similarity =
-            cosineSimilarity(storedEmbedding, newEmbedding)
+        val similarity = cosineSimilarity(storedEmbedding, newEmbedding)
 
         if (similarity < MATCH_THRESHOLD) {
-            return ValidationResult(
-                false,
-                "Finger does not match",
-                similarity
-            )
+            return ValidationResult(false, "Finger does not match", similarity)
         }
 
-        return ValidationResult(
-            true,
-            "Finger matched successfully",
-            similarity
-        )
+        return ValidationResult(true, "Finger matched successfully", similarity)
     }
 }
 

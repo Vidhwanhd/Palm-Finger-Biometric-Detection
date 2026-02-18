@@ -19,14 +19,14 @@ fun ResultScreen(
     viewModel: MainViewModel = viewModel()
 ) {
 
-    val brightness by viewModel.brightness.collectAsState()
-    val lightType by viewModel.lightType.collectAsState()
-    val blurScore by viewModel.blurScore.collectAsState()
-    val handSide by viewModel.handSide.collectAsState()
-    val fingerCount by viewModel.fingerCount.collectAsState()
-    val deviceId by viewModel.deviceId.collectAsState()
+    val brightness by viewModel.brightness.collectAsState(initial = 0f)
+    val lightType by viewModel.lightType.collectAsState(initial = "Unknown")
+    val blurScore by viewModel.blurScore.collectAsState(initial = 0f)
+    val handSide by viewModel.handSide.collectAsState(initial = "Unknown")
+    val fingerCount by viewModel.fingerCount.collectAsState(initial = 0)
+    val deviceId by viewModel.deviceId.collectAsState(initial = "N/A")
 
-    val isSuccess = fingerCount == 5
+    val isSuccess = fingerCount >= 5
 
     Scaffold(
         containerColor = Color(0xFF0D1117),
@@ -34,7 +34,7 @@ fun ResultScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "Biometric Scan Report",
+                        text = "Biometric Scan Report",
                         color = Color.White
                     )
                 },
@@ -64,13 +64,16 @@ fun ResultScreen(
                 )
             ) {
                 Text(
-                    text = if (isSuccess) "✔ SCAN SUCCESSFUL" else "✖ SCAN INCOMPLETE",
+                    text = if (isSuccess)
+                        "✔ SCAN SUCCESSFUL"
+                    else
+                        "✖ SCAN INCOMPLETE",
                     color = Color.White,
                     modifier = Modifier.padding(12.dp)
                 )
             }
 
-            // Report Card
+            // Report Details Card
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = Color(0xFF161B22)
@@ -91,11 +94,11 @@ fun ResultScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             Button(
                 onClick = {
-                    viewModel.resetFingerCount()
+                    viewModel.resetSession()   // 🔥 full reset
                     navController.navigate("palm") {
                         popUpTo("palm") { inclusive = true }
                     }

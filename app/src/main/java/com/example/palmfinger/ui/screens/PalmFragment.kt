@@ -18,13 +18,14 @@ import com.example.palmfinger.camera.BlurDetector
 import com.example.palmfinger.camera.CameraManager
 import com.example.palmfinger.camera.LuminosityAnalyzer
 import com.example.palmfinger.detection.HandDetector
+import com.example.palmfinger.detection.MinutiaeExtractor
+import com.example.palmfinger.detection.PalmStorage
+import com.example.palmfinger.utils.StorageUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.example.palmfinger.utils.StorageUtil
 import java.text.SimpleDateFormat
 import java.util.*
-
 
 @Composable
 fun PalmScreen(navController: NavController) {
@@ -37,12 +38,8 @@ fun PalmScreen(navController: NavController) {
     var lightType by remember { mutableStateOf("Normal") }
     var detectedHandSide by remember { mutableStateOf("Unknown") }
 
-    var lastHand by remember { mutableStateOf("Unknown") }
-    var stableFrames by remember { mutableStateOf(0) }
-
     var isProcessing by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
-    var palmStored by remember { mutableStateOf(false) }
 
     val analyzer = remember {
         LuminosityAnalyzer(context) { result ->
@@ -57,13 +54,17 @@ fun PalmScreen(navController: NavController) {
     }
 
     val detector = remember { HandDetector(context) }
+    val extractor = remember { MinutiaeExtractor() }
 
     LaunchedEffect(Unit) {
         cameraManager.startCamera()
     }
 
     DisposableEffect(Unit) {
-        onDispose { detector.close() }
+        onDispose {
+            detector.close()
+            cameraManager.shutdown()
+        }
     }
 
     Scaffold(
@@ -118,7 +119,6 @@ fun PalmScreen(navController: NavController) {
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-
                     Text(
                         text = "Lighting: $lightType",
                         color = Color.White
@@ -142,7 +142,7 @@ fun PalmScreen(navController: NavController) {
             Button(
                 onClick = {
 
-                    if (isProcessing || palmStored) return@Button
+                    if (isProcessing) return@Button
 
                     if (lightType != "Normal") {
                         scope.launch {
@@ -157,7 +157,6 @@ fun PalmScreen(navController: NavController) {
                     }
 
                     isProcessing = true
-
                     cameraManager.triggerAutoFocus()
 
                     cameraManager.captureBitmap { bitmap ->
@@ -176,34 +175,37 @@ fun PalmScreen(navController: NavController) {
                                 if (detection.landmarks().isEmpty())
                                     return@withContext "NO_PALM"
 
-
                                 if (detector.isPalmDorsal(detection))
                                     return@withContext "DORSAL"
 
                                 val handSide =
                                     detector.getHandSide(detection)
 
-                                if (!palmStored) {
+                                // 🔥 Extract Embedding
+                                val embedding =
+                                    extractor.extractEmbedding(detection)
 
-                                    detector.storePalmTemplate(detection)
+                                if (embedding.isEmpty())
+                                    return@withContext "NO_PALM"
 
-                                    val timeStamp = SimpleDateFormat(
-                                        "yyyyMMdd_HHmmss",
-                                        Locale.getDefault()
-                                    ).format(Date())
+                                // 🔥 Store Palm Data
+                                PalmStorage.storedHandSide = handSide
+                                PalmStorage.storedEmbedding = embedding
 
-                                    val fileName =
-                                        "${handSide}_Hand_$timeStamp.jpg"
+                                // 🔥 Save Image
+                                val timeStamp = SimpleDateFormat(
+                                    "yyyyMMdd_HHmmss",
+                                    Locale.getDefault()
+                                ).format(Date())
 
-                                    StorageUtil.saveImageToPublicFolder(
-                                        context,
-                                        bitmap,
-                                        fileName
-                                    )
+                                val fileName =
+                                    "${handSide}_Hand_$timeStamp.jpg"
 
-                                    palmStored = true
-                                }
-
+                                StorageUtil.saveImageToPublicFolder(
+                                    context,
+                                    bitmap,
+                                    fileName
+                                )
 
                                 handSide
                             }
@@ -228,12 +230,10 @@ fun PalmScreen(navController: NavController) {
                                     showSuccessDialog = true
                                 }
                             }
-
-
-                }
+                        }
                     }
                 },
-                enabled = !isProcessing && !palmStored,
+                enabled = !isProcessing,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 40.dp)
@@ -265,7 +265,7 @@ fun PalmScreen(navController: NavController) {
                         Text("Palm Captured Successfully")
                     },
                     text = {
-                        Text("Your $detectedHandSide hand has been recorded successfully. Now capture your $detectedHandSide hand fingers ")
+                        Text("Your $detectedHandSide hand has been recorded successfully. Now capture your $detectedHandSide hand fingers.")
                     }
                 )
             }

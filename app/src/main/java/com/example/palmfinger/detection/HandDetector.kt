@@ -87,11 +87,17 @@ class HandDetector(
         val v2x = pinkyBase.x() - wrist.x()
         val v2y = pinkyBase.y() - wrist.y()
 
-        val normalZ = (v1x * v2y) - (v1y * v2x)
+        val crossProduct = (v1x * v2y) - (v1y * v2x)
 
-        // Adjust sign if needed depending on camera
-        return normalZ < 0
+        val handSide = getHandSide(result)
+
+        return if (handSide.equals("Left", true)) {
+            crossProduct < 0
+        } else {
+            crossProduct > 0
+        }
     }
+
 
 
 
