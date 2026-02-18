@@ -16,7 +16,7 @@ import com.example.palmfinger.viewmodel.MainViewModel
 @Composable
 fun ResultScreen(
     navController: NavController,
-    viewModel: MainViewModel = viewModel()
+    viewModel: MainViewModel
 ) {
 
     val brightness by viewModel.brightness.collectAsState(initial = 0f)

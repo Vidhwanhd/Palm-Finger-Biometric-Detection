@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.palmfinger.camera.BlurDetector
 import com.example.palmfinger.camera.CameraManager
@@ -21,6 +22,7 @@ import com.example.palmfinger.detection.HandDetector
 import com.example.palmfinger.detection.MinutiaeExtractor
 import com.example.palmfinger.detection.PalmStorage
 import com.example.palmfinger.utils.StorageUtil
+import com.example.palmfinger.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,7 +30,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
-fun PalmScreen(navController: NavController) {
+fun PalmScreen(
+    navController: NavController,
+    viewModel: MainViewModel
+) {
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -181,18 +186,17 @@ fun PalmScreen(navController: NavController) {
                                 val handSide =
                                     detector.getHandSide(detection)
 
-                                // 🔥 Extract Embedding
                                 val embedding =
                                     extractor.extractEmbedding(detection)
 
                                 if (embedding.isEmpty())
                                     return@withContext "NO_PALM"
 
-                                // 🔥 Store Palm Data
+                                // Store palm data (OK in background)
                                 PalmStorage.storedHandSide = handSide
                                 PalmStorage.storedEmbedding = embedding
 
-                                // 🔥 Save Image
+                                // Save image
                                 val timeStamp = SimpleDateFormat(
                                     "yyyyMMdd_HHmmss",
                                     Locale.getDefault()
@@ -226,12 +230,16 @@ fun PalmScreen(navController: NavController) {
                                     )
 
                                 else -> {
+                                    // ✅ UPDATE VIEWMODEL ON MAIN THREAD
+                                    viewModel.updateHandSide(result)
+
                                     detectedHandSide = result
                                     showSuccessDialog = true
                                 }
                             }
                         }
                     }
+
                 },
                 enabled = !isProcessing,
                 modifier = Modifier

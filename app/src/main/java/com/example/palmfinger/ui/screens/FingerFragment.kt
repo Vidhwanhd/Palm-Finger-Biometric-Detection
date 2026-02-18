@@ -19,6 +19,7 @@ import com.example.palmfinger.camera.CameraManager
 import com.example.palmfinger.camera.LuminosityAnalyzer
 import com.example.palmfinger.detection.*
 import com.example.palmfinger.utils.StorageUtil
+import com.example.palmfinger.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,8 +30,10 @@ import java.util.*
 @Composable
 fun FingerScreen(
     navController: NavController,
-    storedHand: String
-) {
+    storedHand: String,
+    viewModel: MainViewModel
+)
+ {
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -48,13 +51,18 @@ fun FingerScreen(
         "Thumb", "Index", "Middle", "Ring", "Little"
     )
 
-    val analyzer = remember {
-        LuminosityAnalyzer(context) { result ->
-            lightType = result.lightType
-        }
-    }
+     val analyzer = remember {
+         LuminosityAnalyzer(context) { result ->
+             lightType = result.lightType
+             viewModel.updateBrightness(
+                 result.brightnessScore.toFloat(),
+                 result.lightType
+             )
+         }
+     }
 
-    val previewView = remember { PreviewView(context) }
+
+     val previewView = remember { PreviewView(context) }
 
     val cameraManager = remember {
         CameraManager(context, lifecycleOwner, previewView, analyzer)
@@ -248,6 +256,7 @@ fun FingerScreen(
                                         fingerIndex++
                                     } else {
                                         fingerIndex = totalFingers - 1
+                                        viewModel.incrementFingerCount()
                                         showSuccessDialog = true
                                         cameraManager.shutdown()
                                     }
